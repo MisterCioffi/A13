@@ -86,21 +86,43 @@ public class ScalataGame extends TurnBasedGame {
     // OVERRIDE METODI
     // ========================================
 
+// In ScalataGame.java
+
     @Override
     public void updateState(GameParams gameParams, CompileResult userCompileResult, CompileResult robotCompileResult) {
         if (!(gameParams instanceof ScalataParams))
-            throw new IllegalArgumentException("Impossibile aggiornare la logica corrente, i parametri ricevuti non son istanza di ScalataParams");
-        
-        // Chiama il metodo della superclasse per aggiornare i campi comuni
+            throw new IllegalArgumentException("Parametri non validi per ScalataGame");
+
+        // Aggiorna i campi base (codice test, risultati compilazione)
         super.updateState(gameParams, userCompileResult, robotCompileResult);
-        
-        // Aggiorna i campi specifici della scalata
+
         ScalataParams scalataParams = (ScalataParams) gameParams;
-        this.currentLevel = scalataParams.getCurrentLevel();
+
+        // Aggiorna metadati descrittivi
         this.scalataName = scalataParams.getScalataName();
         this.totalLevels = scalataParams.getTotalLevels();
-        this.remainingTime = scalataParams.getRemainingTime();
-        this.timeMaxPerLevel = scalataParams.getTimeMaxPerLevel();
+
+        // Se il DTO porta un nuovo timeMax (es. cambio configurazione), lo aggiorniamo
+        if (scalataParams.getTimeMaxPerLevel() > 0) {
+            this.timeMaxPerLevel = scalataParams.getTimeMaxPerLevel();
+        }
+
+        // === FIX DEFINITIVO TIMER E LIVELLO ===
+        // Logica:
+        // 1. Se currentTurn == 0, siamo appena entrati nel livello (settato da GameManager).
+        //    Il server ha i dati CORRETTI (Nuovo Livello, Tempo Pieno).
+        //    Il client ha i dati VECCHI (Livello Precedente, Tempo Residuo).
+        //    -> IGNORIAMO i dati critici del client.
+        // 2. Se currentTurn > 0, siamo durante il gioco.
+        //    -> Accettiamo il tempo del client per sincronizzare il countdown.
+
+        if (this.getCurrentTurn() > 0) {
+            this.remainingTime = scalataParams.getRemainingTime();
+            // Nota: Non aggiorniamo MAI currentLevel dal client. Il server decide il livello.
+        } else {
+            logger.info("[SCALATA] UpdateState con Turn=0 (Inizio Livello). Ignoro remainingTime del client ({}) e mantengo quello del server ({})",
+                    scalataParams.getRemainingTime(), this.remainingTime);
+        }
     }
 
     /**

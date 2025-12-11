@@ -58,7 +58,7 @@ public class GameController {
     @Operation(
             summary = "Start a new game",
             description = """
-                    Verify that a game with the same game mode doesn't exist already, them creates and starts a new game
+                    Verify that a game with the same game mode doesn't exist already, them creates and starts a new game 
                     for the given player and configuration parameters."""
     )
     @ApiResponses(value = {

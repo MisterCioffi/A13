@@ -1,0 +1,362 @@
+@startuml Gestione Progressione Livelli Scalata
+!theme plain
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam backgroundColor White
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam maxMessageSize 150
+
+title Diagramma di Sequenza - Gestione Progressione Livelli (Modalità Scalata)
+
+actor "Giocatore" as Player
+participant "UI/Controller\n(T5)" as UI
+participant "GameManager\n(T5)" as GameManager
+participant "ScalataGame\n(T5)" as ScalataGame
+participant "T1Service\n(Interface)" as T1Service
+participant "T4Service\n(Interface)" as T4Service
+participant "T7Service\n(Interface)" as T7Service
+participant "T23Service\n(Interface)" as T23Service
+participant "PlayerProgressController\n(T23)" as Controller
+participant "PlayerProgressService\n(T23)" as Service
+database "Database\n(T4)" as T4DB
+database "Database\n(T23)" as T23DB
+
+== Fase 1: Inizio Scalata ==
+
+Player -> UI: Avvia nuova scalata\n(scalataName)
+activate UI
+
+UI -> GameManager: handleStartNewGame(\nStartGameRequestDTO)
+activate GameManager
+
+GameManager -> ScalataGame: new ScalataGame(\nplayerId, scalataName,\ncurrentLevel=1, totalLevels)
+activate ScalataGame
+ScalataGame --> GameManager: ScalataGame instance
+deactivate ScalataGame
+
+GameManager -> T4Service: CreateGame(\nplayerId, gameMode=Scalata,\nclassUT, scalataName,\ncurrentLevel=1)
+activate T4Service
+T4Service -> T4DB: INSERT INTO games\n(player_id, game_mode,\nclass_ut, scalata_name,\ncurrent_level, status)
+activate T4DB
+T4DB --> T4Service: gameId
+deactivate T4DB
+T4Service --> GameManager: gameId
+deactivate T4Service
+
+GameManager -> T4Service: StartRound(gameId)
+activate T4Service
+T4Service -> T4DB: INSERT INTO rounds\n(game_id, round_number)
+activate T4DB
+T4DB --> T4Service: roundId
+deactivate T4DB
+T4Service --> GameManager: roundId
+deactivate T4Service
+
+GameManager -> T23Service: createPlayerProgressAgainstOpponent(\nplayerId, gameMode, classUT,\ntype, difficulty)
+activate T23Service
+T23Service --> GameManager: GameProgressDTO
+deactivate T23Service
+
+GameManager --> UI: StartGameResponseDTO\n(gameId, "created")
+deactivate GameManager
+
+UI --> Player: Scalata avviata\nLivello 1/{totalLevels}
+deactivate UI
+
+== Fase 2: Esecuzione Turno Livello ==
+
+Player -> UI: Esegue turno\n(submit test code)
+activate UI
+
+UI -> GameManager: handlePlayTurn(\nRunGameRequestDTO, isGameEnd)
+activate GameManager
+
+note over GameManager
+  Recupera ScalataGame
+  dalla sessione Redis
+end note
+
+GameManager -> GameManager: handleGetCurrentGame(\nplayerId, gameMode)
+
+GameManager -> T7Service: compileAndCoverage(\nclassUT, testClass)
+activate T7Service
+T7Service --> GameManager: JacocoCoverageDTO
+deactivate T7Service
+
+alt Se compilazione ha successo
+
+  GameManager -> T1Service: getOpponentCoverage(\nclassUT, type, difficulty)
+  activate T1Service
+  T1Service --> GameManager: XML Coverage
+  deactivate T1Service
+  
+  note over GameManager
+    Calcola punteggi:
+    - userScore
+    - opponentScore
+    Determina vittoria
+  end note
+  
+  GameManager -> ScalataGame: updateState(\nGameParams, userCompileResult,\nrobotCompileResult)
+  activate ScalataGame
+  
+  ScalataGame -> ScalataGame: Aggiorna stato:\n- score\n- isWinner\n- currentTurn++
+  
+  ScalataGame --> GameManager: Stato aggiornato
+  deactivate ScalataGame
+  
+  GameManager -> T4Service: EndTurn(\ngameId, playerId, turnNumber,\nCompileResult)
+  activate T4Service
+  T4Service -> T4DB: INSERT INTO turns\n(game_id, turn_number,\nline_coverage, branch_coverage)
+  activate T4DB
+  T4DB --> T4Service: Success
+  deactivate T4DB
+  T4Service --> GameManager: "Turn ended"
+  deactivate T4Service
+
+end
+
+GameManager --> UI: RunGameResponseDTO\n(scores, isWinner, achievements)
+deactivate GameManager
+
+UI --> Player: Mostra risultato turno
+deactivate UI
+
+== Fase 3: Fine Livello (Vittoria) ==
+
+Player -> UI: Termina livello\n(Submit finale)
+activate UI
+
+UI -> GameManager: handleEndGame(\nRunGameRequestDTO)
+activate GameManager
+
+GameManager -> GameManager: handleGetCurrentGame(\nplayerId, gameMode)
+
+note over GameManager
+  Verifica se ScalataGame
+  e controlla stato:
+  - isWinner?
+  - isScalataWon?
+  (currentLevel >= totalLevels)
+end note
+
+alt Giocatore ha vinto il livello
+
+    == Fase 3a: Aggiornamento Progresso Livello ==
+    
+    GameManager -> T23Service: updatePlayerProgressAgainstOpponent(\nplayerId, gameMode, classUT,\ntype, difficulty, isWinner,\nunlockedAchievements)
+    activate T23Service
+    
+    T23Service -> Controller: PUT /players/{playerId}/progression/\nagainst/{gameMode}/{classUT}/\n{type}/{difficulty}
+    activate Controller
+    
+    Controller -> Service: updatePlayerGameProgressAgainstOpponent(\nplayerId, gameMode, classUT,\ntype, difficulty, UpdateGameProgressDTO)
+    activate Service
+    
+    Service -> T23DB: UPDATE game_progresses\nSET is_winner = true,\nachievements = [...]
+    activate T23DB
+    T23DB --> Service: Success
+    deactivate T23DB
+    
+    Service --> Controller: UpdateGameProgressDTO
+    deactivate Service
+    
+    Controller --> T23Service: GameProgressDTO
+    deactivate Controller
+    
+    T23Service --> GameManager: GameProgressDTO
+    deactivate T23Service
+    
+    == Fase 3b: Aggiornamento Achievement Globali ==
+    
+    GameManager -> T23Service: updateGlobalAchievements(\nplayerId, achievementsSet)
+    activate T23Service
+    
+    T23Service -> Controller: PUT /players/{playerId}/progression/\nachievements/global
+    activate Controller
+    
+    Controller -> Service: updatePlayerGlobalAchievements(\nplayerId, unlockedAchievements)
+    activate Service
+    
+    Service -> T23DB: UPDATE players_progresses\nSET global_achievements = [...]
+    activate T23DB
+    T23DB --> Service: Success
+    deactivate T23DB
+    
+    Service --> Controller: Set<String> nuovi achievement
+    deactivate Service
+    
+    Controller --> T23Service: Set<String>
+    deactivate Controller
+    
+    T23Service --> GameManager: Set<String>
+    deactivate T23Service
+    
+    == Fase 3c: Aggiornamento Punti Esperienza ==
+    
+    GameManager -> GameManager: Calcola punti esperienza\nguadagnati (basati su\ncopertura, tempo, difficoltà)
+    
+    GameManager -> T23Service: incrementUserExp(\nplayerId, expGained)
+    activate T23Service
+    
+    T23Service -> Controller: PUT /players/{playerId}/progression/\nexperience
+    activate Controller
+    
+    Controller -> Service: updatePlayerExperience(\nplayerId, gainedExp)
+    activate Service
+    
+    Service -> T23DB: UPDATE players_progresses\nSET experience_points = newTotal
+    activate T23DB
+    T23DB --> Service: Success
+    deactivate T23DB
+    
+    Service --> Controller: int (nuovi punti totali)
+    deactivate Service
+    
+    Controller --> T23Service: Integer
+    deactivate Controller
+    
+    T23Service --> GameManager: Integer
+    deactivate T23Service
+    
+    == Fase 4: Verifica Progressione Scalata ==
+    
+    alt Scalata NON completata (currentLevel < totalLevels)
+    
+        note over GameManager
+          La scalata continua!
+          Preparazione livello successivo
+        end note
+        
+        GameManager -> ScalataGame: setCurrentLevel(\ncurrentLevel + 1)
+        activate ScalataGame
+        
+        note over ScalataGame
+          Incrementa currentLevel
+          localmente
+        end note
+        
+        ScalataGame --> GameManager: Livello aggiornato
+        deactivate ScalataGame
+        
+        GameManager -> T4Service: IncrementCurrentLevel(gameId)
+        activate T4Service
+        T4Service -> T4DB: UPDATE games\nSET current_level = current_level + 1\nWHERE game_id = {gameId}
+        activate T4DB
+        T4DB --> T4Service: Success
+        deactivate T4DB
+        T4Service --> GameManager: "Level incremented"
+        deactivate T4Service
+        
+        GameManager -> T1Service: getLevelByScalataAndPosition(\nscalataName, nextLevel)
+        activate T1Service
+        
+        note over T1Service
+          Recupera configurazione
+          del livello successivo dalla
+          definizione della scalata
+        end note
+        
+        T1Service --> GameManager: Map<String, Object>\n{className, tempoMax,\nopponentName, difficulty}
+        deactivate T1Service
+        
+        GameManager -> ScalataGame: Aggiorna dati livello:\n- setClassUTName(nextClassName)\n- setRemainingTime(tempoMax)\n- Mantiene sessione attiva
+        activate ScalataGame
+        ScalataGame --> GameManager: Configurazione aggiornata
+        deactivate ScalataGame
+        
+        GameManager -> T4Service: EndRound(gameId)
+        activate T4Service
+        T4Service -> T4DB: UPDATE rounds\nSET status = 'FINISHED'
+        activate T4DB
+        T4DB --> T4Service: Success
+        deactivate T4DB
+        T4Service --> GameManager: "Round closed"
+        deactivate T4Service
+        
+        GameManager -> T4Service: StartRound(gameId)
+        activate T4Service
+        T4Service -> T4DB: INSERT INTO rounds\n(game_id, round_number)
+        activate T4DB
+        T4DB --> T4Service: roundId
+        deactivate T4DB
+        T4Service --> GameManager: roundId
+        deactivate T4Service
+        
+        note over GameManager
+          Sessione ScalataGame salvata
+          in Redis con dati livello
+          successivo
+        end note
+        
+        GameManager --> UI: EndScalataGameResponseDTO\n(scores, exp, achievements,\ncurrentLevel, totalLevels,\nscalataCompleted=false)
+        deactivate GameManager
+        
+        UI --> Player: Livello completato!\nPassaggio al livello\n{currentLevel}/{totalLevels}
+        deactivate UI
+    
+    else Scalata COMPLETATA (currentLevel >= totalLevels)
+    
+        note over GameManager
+          Scalata completata!
+          Chiusura partita
+        end note
+        
+        GameManager -> T4Service: EndRound(gameId)
+        activate T4Service
+        T4Service -> T4DB: UPDATE rounds\nSET status = 'FINISHED'
+        activate T4DB
+        T4DB --> T4Service: Success
+        deactivate T4DB
+        T4Service --> GameManager: "Round closed"
+        deactivate T4Service
+        
+        GameManager -> T4Service: EndGame(\ngameId, scores, isSurrendered=false)
+        activate T4Service
+        T4Service -> T4DB: UPDATE games\nSET status = 'FINISHED',\nend_date = now()
+        activate T4DB
+        T4DB --> T4Service: Success
+        deactivate T4DB
+        T4Service --> GameManager: "Game finished"
+        deactivate T4Service
+        
+        note over GameManager
+          Sessione chiusa e
+          rimossa da Redis
+        end note
+        
+        GameManager --> UI: EndScalataGameResponseDTO\n(scores, exp, achievements,\ncurrentLevel, totalLevels,\nscalataCompleted=true)
+        deactivate GameManager
+        
+        UI --> Player: 🎉 SCALATA COMPLETATA! 🎉\nTutti i livelli superati\nEXP totale: {exp}\nAchievement: {achievements}
+        deactivate UI
+    
+    end
+
+else Giocatore ha perso il livello
+
+    note over GameManager
+      Livello fallito
+      Chiusura partita Scalata
+    end note
+    
+    GameManager -> T4Service: EndRound(gameId)
+    activate T4Service
+    T4Service --> GameManager: "Round closed"
+    deactivate T4Service
+    
+    GameManager -> T4Service: EndGame(\ngameId, scores, isSurrendered=false)
+    activate T4Service
+    T4Service --> GameManager: "Game finished"
+    deactivate T4Service
+    
+    GameManager --> UI: EndGameResponseDTO\n(scores, isWinner=false,\nexp=0, currentLevel)
+    deactivate GameManager
+    
+    UI --> Player: Livello fallito\nScalata terminata\nal livello {currentLevel}/{totalLevels}
+    deactivate UI
+
+end
+
+@enduml

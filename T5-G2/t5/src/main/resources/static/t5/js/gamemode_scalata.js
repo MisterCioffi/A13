@@ -94,79 +94,100 @@ let selectedScalata = null;
  * Aggiorna il DOM con i dati della sessione esistente
  * Mostra scheda_continua_scalata se c'è una sessione, altrimenti scalate-container
  */
+/**
+ * Aggiorna il DOM con i dati della sessione esistente
+ * Mostra scheda_continua_scalata se c'è una sessione, altrimenti scalate-container
+ */
 function updateDOMWithPreviousScalataData(sessionData) {
     if (sessionData) {
-        console.log("[gamemode_scalata] Scalata in corso, mostro scheda continua");
-        
-        // Nascondi container scalate
+        console.log("[gamemode_scalata] Scalata in corso, mostro scheda continua. Dati:", sessionData);
+
+        // 1. GESTIONE VISIBILITÀ
+        // Nascondi container scalate e mostra scheda continua
         const scalateContainer = document.getElementById("scalate-container");
         const submitButton = document.getElementById("submit-button");
-        
+
         if (scalateContainer) scalateContainer.classList.add("d-none");
         if (submitButton) submitButton.parentElement.classList.add("d-none");
-        
-        // Mostra scheda continua
+
         document.getElementById("scheda_continua_scalata").classList.remove("d-none");
-        
-        // Popola i dati nella scheda continua
-        // ATTENZIONE: Usiamo i nomi dei campi JSON (@JsonProperty) non i nomi Java!
-        // class_ut (non classUTName), remainingTime resta uguale perché non ha @JsonProperty custom
+
+        // 2. POPOLAMENTO DATI
         document.getElementById("gamemode_scalata_nome").innerText = sessionData.scalataName || "";
         document.getElementById("gamemode_livello_corrente").innerText = sessionData.currentLevel || 1;
         document.getElementById("gamemode_livelli_totali").innerText = sessionData.totalLevels || "N/A";
         document.getElementById("gamemode_modalita").innerText = "Scalata";
-        
-        // Formatta e mostra il tempo rimanente
-        const remainingTime = sessionData.remainingTime || 0;
-        document.getElementById("gamemode_time_limit").innerText = formatTime(remainingTime);
-        
-        // ✅ NUOVO: Configura il bottone "Riprendi partita" per recuperare i dati del livello corrente
+
+        // --- FIX TEMPO RIMANENTE ---
+        // Se il tempo è 0 o negativo (es. livello fallito o timeout),
+        // visualizziamo il tempo massimo del livello per il nuovo tentativo.
+        let displayTime = sessionData.remainingTime;
+
+        if ((displayTime === undefined || displayTime <= 0) && sessionData.timeMaxPerLevel > 0) {
+            console.log("[gamemode_scalata] Tempo residuo scaduto/nullo, imposto tempo massimo per retry:", sessionData.timeMaxPerLevel);
+            displayTime = sessionData.timeMaxPerLevel;
+        } else if (displayTime === undefined) {
+            displayTime = 0;
+        }
+
+        document.getElementById("gamemode_time_limit").innerText = formatTime(displayTime);
+
+        // 3. CONFIGURAZIONE BOTTONE "RIPRENDI"
         const linkRiprendi = document.getElementById("Continua");
-        
-        // Invece di usare href statico, usiamo onclick per chiamare fetchCurrentLevel
-        linkRiprendi.href = "javascript:void(0);"; // Previene il redirect di default
-        linkRiprendi.onclick = async function(e) {
-            e.preventDefault(); // Blocca il comportamento di default
-            
+
+        linkRiprendi.href = "javascript:void(0);"; // Previene redirect standard
+
+        // Rimuoviamo eventuali listener precedenti per evitare duplicazioni
+        const newLinkRiprendi = linkRiprendi.cloneNode(true);
+        linkRiprendi.parentNode.replaceChild(newLinkRiprendi, linkRiprendi);
+
+        newLinkRiprendi.onclick = async function(e) {
+            e.preventDefault();
+
             const currentLevel = sessionData.currentLevel || 1;
             const scalataName = sessionData.scalataName;
-            
-            console.log(`[gamemode_scalata] Recupero dati livello ${currentLevel} di "${scalataName}"`);
-            
+
+            console.log(`[gamemode_scalata] Riprendo livello ${currentLevel} di "${scalataName}"`);
+
             try {
-                // 1. Recupera i dati del livello corrente da T1
+                // a. Recupera i dati del livello corrente da T1 (per avere la classe corretta)
                 const levelData = await fetchCurrentLevel(scalataName, currentLevel);
-                
+
                 if (!levelData || levelData.error) {
                     console.error("[gamemode_scalata] Errore recupero livello:", levelData);
                     swal("Errore!", "Impossibile recuperare i dati del livello corrente", "error");
                     return;
                 }
-                
-                console.log("[gamemode_scalata] Dati livello corrente ricevuti:", levelData);
-                
-                // 2. Redirect all'editor con la classe del livello corrente
+
+                // b. Determina il tempo da passare all'editor
+                // Usiamo la stessa logica di sopra: se 0, passiamo il tempo massimo per il reset
+                let timeToPass = sessionData.remainingTime;
+                if ((timeToPass === undefined || timeToPass <= 0) && sessionData.timeMaxPerLevel > 0) {
+                    timeToPass = sessionData.timeMaxPerLevel;
+                }
+
+                console.log("[gamemode_scalata] Redirect editor con Classe:", levelData.className, "Tempo:", timeToPass);
+
+                // c. Redirect
                 const classUT = levelData.className;
-                window.location.href = `/editor?ClassUT=${classUT}&mode=Scalata&remainingTime=${remainingTime}`;
-                
+                window.location.href = `/editor?ClassUT=${classUT}&mode=Scalata&remainingTime=${timeToPass}`;
+
             } catch (error) {
-                console.error("[gamemode_scalata] Errore nel recupero del livello:", error);
-                swal("Errore!", "Si è verificato un errore. Riprova più tardi.", "error");
+                console.error("[gamemode_scalata] Eccezione nel recupero del livello:", error);
+                swal("Errore!", "Si è verificato un errore di connessione. Riprova.", "error");
             }
         };
-        
-        console.log("[gamemode_scalata] Bottone 'Riprendi' configurato per livello", sessionData.currentLevel);
-        
+
     } else {
-        console.log("[gamemode_scalata] Nessuna scalata in corso, mostro scheda nuovo");
-        
+        console.log("[gamemode_scalata] Nessuna scalata in corso, mostro lista scalate");
+
         // Mostra container scalate
         const scalateContainer = document.getElementById("scalate-container");
         const submitButton = document.getElementById("submit-button");
-        
+
         if (scalateContainer) scalateContainer.classList.remove("d-none");
         if (submitButton) submitButton.parentElement.classList.remove("d-none");
-        
+
         // Nascondi scheda continua
         document.getElementById("scheda_continua_scalata").classList.add("d-none");
     }

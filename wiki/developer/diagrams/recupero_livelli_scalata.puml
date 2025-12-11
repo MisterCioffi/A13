@@ -1,0 +1,311 @@
+@startuml Recupero Livelli Scalata
+!theme plain
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam backgroundColor White
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam maxMessageSize 150
+
+title Diagramma di Sequenza - Recupero Livelli Scalata da T4 e T1
+
+actor "Giocatore" as Player
+participant "UI\n(Frontend)" as UI
+participant "GuiController\n(T5)" as GuiController
+participant "GameController\n(T5)" as GameController
+participant "GameManager\n(T5)" as GameManager
+participant "T1Service\n(T5 Interface)" as T1Service
+participant "T1\n(Admin Service)" as T1
+participant "T4Service\n(T5 Interface)" as T4Service
+participant "T4\n(Game Repository)" as T4
+database "T1 Database\n(Scalate/Levels)" as T1DB
+database "T4 Database\n(Games)" as T4DB
+
+== Fase 1: Caricamento Lista Scalate Disponibili ==
+
+Player -> UI: Accede alla pagina\nSelezione Modalità
+activate UI
+
+UI -> GuiController: GET /ListaScalate
+activate GuiController
+
+note over GuiController
+  Utilizza ServiceObjectComponent
+  per recuperare lista scalate
+end note
+
+GuiController -> T1Service: handleRequest(\n"T1", "getScalateList")
+activate T1Service
+
+T1Service -> T1: GET /adminService/scalata/scalate_list
+activate T1
+
+T1 -> T1DB: SELECT * FROM scalate\nWHERE active = true
+activate T1DB
+
+note over T1DB
+  Recupera tutte le scalate
+  configurate dall'amministratore
+end note
+
+T1DB --> T1: List<Scalata>\n[{id, name, description,\nnumberOfLevels, levels[]}]
+deactivate T1DB
+
+T1 --> T1Service: List<ScalataDTO>\n[{scalataName, totalLevels,\nscalataDescription,\nusername, levels[]}]
+deactivate T1
+
+T1Service --> GuiController: List<ScalataDTO>
+deactivate T1Service
+
+GuiController --> UI: JSON Lista Scalate
+deactivate GuiController
+
+UI --> Player: Mostra lista scalate\ndisponibili con:\n- Nome\n- Descrizione\n- Numero livelli
+deactivate UI
+
+== Fase 2: Verifica Progresso Giocatore (Scalata Già Iniziata?) ==
+
+Player -> UI: Seleziona scalata\n"{scalataName}"
+activate UI
+
+UI -> GameController: POST /StartGame\nStartScalataRequestDTO\n(playerId, scalataName)
+activate GameController
+
+note over GameController
+  Prima di creare nuova partita,
+  verifica se esiste partita
+  in corso per questa scalata
+end note
+
+GameController -> T4Service: handleRequest(\n"T4", "GetCurrentLevelForScalata",\nplayerId, scalataName)
+activate T4Service
+
+T4Service -> T4: GET /games/scalata/current-level?\nplayerId={playerId}&\nscalataName={scalataName}
+activate T4
+
+T4 -> T4DB: SELECT current_level\nFROM games\nWHERE player_id = {playerId}\nAND scalata_name = {scalataName}\nAND status IN ('CREATED', 'IN_PROGRESS')\nORDER BY creation_date DESC\nLIMIT 1
+activate T4DB
+
+T4DB --> T4: currentLevel o NULL
+deactivate T4DB
+
+alt Partita Scalata in corso trovata
+
+    T4 --> T4Service: Integer currentLevel\n(es. 3 - livello in corso)
+    deactivate T4
+    
+    T4Service --> GameController: currentLevel = 3
+    deactivate T4Service
+    
+    note over GameController
+      Esiste già una partita!
+      Recupera dati livello corrente
+      per riprendere da dove si era
+      fermato il giocatore
+    end note
+
+else Nessuna partita in corso
+
+    T4 --> T4Service: 404 Not Found
+    deactivate T4
+    
+    T4Service --> GameController: currentLevel = 1\n(default, nuova scalata)
+    deactivate T4Service
+    
+    note over GameController
+      Nessuna partita in corso
+      Inizia dal livello 1
+    end note
+
+end
+
+== Fase 3: Recupero Dati Livello da T1 ==
+
+note over GameController
+  Ora che abbiamo il currentLevel,
+  recuperiamo i dettagli del livello
+  (classe, tempo, avversario, difficoltà)
+end note
+
+GameController -> GameManager: handleStartNewGame(\nStartScalataRequestDTO)
+activate GameManager
+
+GameManager -> T1Service: handleRequest(\n"T1", "getLevelByScalataAndPosition",\nscalataName, currentLevel)
+activate T1Service
+
+T1Service -> T1: GET /adminService/scalata/\n{scalataName}/level/{currentLevel}
+activate T1
+
+note over T1
+  Recupera configurazione
+  del livello specifico
+  dalla definizione della scalata
+end note
+
+T1 -> T1DB: SELECT l.* FROM levels l\nJOIN scalata_levels sl\n  ON l.id = sl.level_id\nJOIN scalate s\n  ON sl.scalata_id = s.id\nWHERE s.name = {scalataName}\nAND sl.position = {currentLevel}
+activate T1DB
+
+T1DB --> T1: Level data\n{levelId, className,\ntempoMax, opponentName,\nopponentDifficulty}
+deactivate T1DB
+
+T1 --> T1Service: Map<String, Object>\n{className: "FTPFile",\ntempoMax: 600,\nopponentName: "Randoop",\ndifficulty: "EASY"}
+deactivate T1
+
+T1Service --> GameManager: Map<String, Object>\n(dati livello)
+deactivate T1Service
+
+note over GameManager
+  Con i dati del livello,
+  crea la ScalataGame:
+  - Classe da testare
+  - Tempo disponibile
+  - Tipo avversario
+  - Difficoltà
+end note
+
+GameManager -> GameManager: Crea ScalataGame(\nplayerId, className=FTPFile,\nopponentName=Randoop,\ndifficulty=EASY,\nremainingTime=600,\nscalataName, currentLevel,\ntotalLevels)
+
+== Fase 4: Registrazione Partita in T4 ==
+
+GameManager -> T4Service: handleRequest(\n"T4", "CreateGame",\nplayerId, gameMode=Scalata,\nclassUT, scalataName,\ncurrentLevel)
+activate T4Service
+
+T4Service -> T4: POST /games
+activate T4
+
+T4 -> T4DB: INSERT INTO games\n(player_id, game_mode,\nclass_ut, scalata_name,\ncurrent_level, total_levels,\nstatus, creation_date)\nVALUES ({playerId}, 'Scalata',\n{className}, {scalataName},\n{currentLevel}, {totalLevels},\n'CREATED', NOW())
+activate T4DB
+
+T4DB --> T4: gameId (es. 12345)
+deactivate T4DB
+
+T4 --> T4Service: gameId = 12345
+deactivate T4
+
+T4Service --> GameManager: gameId
+deactivate T4Service
+
+note over GameManager
+  Partita registrata in T4
+  con tutti i dati della scalata
+  e riferimento al livello corrente
+end note
+
+== Fase 5: Inizializzazione Round ==
+
+GameManager -> T4Service: handleRequest(\n"T4", "StartRound", gameId)
+activate T4Service
+
+T4Service -> T4: POST /games/{gameId}/rounds
+activate T4
+
+T4 -> T4DB: INSERT INTO rounds\n(game_id, round_number,\nstart_date, status)\nVALUES ({gameId}, 1,\nNOW(), 'IN_PROGRESS')
+activate T4DB
+
+T4DB --> T4: roundId
+deactivate T4DB
+
+T4 --> T4Service: roundId
+deactivate T4
+
+T4Service --> GameManager: roundId
+deactivate T4Service
+
+== Fase 6: Risposta al Client ==
+
+note over GameManager
+  Salva sessione ScalataGame
+  in Redis per gestione stateful
+end note
+
+GameManager --> GameController: StartGameResponseDTO\n(gameId, "created")
+deactivate GameManager
+
+GameController --> UI: JSON Response\n{gameId: 12345,\nstatus: "created",\nclassName: "FTPFile",\nremainingTime: 600,\ncurrentLevel: 1,\ntotalLevels: 5}
+deactivate GameController
+
+UI --> Player: Scalata avviata!\nLivello 1/5\nClasse: FTPFile\nTempo: 10 minuti\nAvversario: Randoop (Facile)
+deactivate UI
+
+== Fase 7: Avanzamento al Livello Successivo (Durante il gioco) ==
+
+note over Player
+  Dopo che il giocatore completa
+  un livello, T5 recupera
+  automaticamente il livello successivo
+end note
+
+Player -> UI: Completa livello 1\n(vittoria)
+activate UI
+
+UI -> GameController: POST /EndGame\nRunScalataDTO
+activate GameController
+
+GameController -> GameManager: handleEndGame(\nRunScalataDTO)
+activate GameManager
+
+note over GameManager
+  Vede che è ScalataGame
+  e livello vinto ma scalata
+  non completata
+end note
+
+alt Scalata non completata (currentLevel < totalLevels)
+
+    GameManager -> GameManager: currentLevel++\n(da 1 a 2)
+    
+    GameManager -> T4Service: handleRequest(\n"T4", "IncrementCurrentLevel",\ngameId)
+    activate T4Service
+    
+    T4Service -> T4: PUT /games/{gameId}/\ncurrent-level-increment
+    activate T4
+    
+    T4 -> T4DB: UPDATE games\nSET current_level = current_level + 1\nWHERE game_id = {gameId}
+    activate T4DB
+    
+    T4DB --> T4: Success\n(current_level = 2)
+    deactivate T4DB
+    
+    T4 --> T4Service: "Level incremented"
+    deactivate T4
+    
+    T4Service --> GameManager: Success
+    deactivate T4Service
+    
+    note over GameManager
+      Ora recupera i dati
+      del livello 2 da T1
+    end note
+    
+    GameManager -> T1Service: handleRequest(\n"T1", "getLevelByScalataAndPosition",\nscalataName, 2)
+    activate T1Service
+    
+    T1Service -> T1: GET /adminService/scalata/\n{scalataName}/level/2
+    activate T1
+    
+    T1 -> T1DB: SELECT level data\nWHERE position = 2
+    activate T1DB
+    
+    T1DB --> T1: Level 2 data\n{className: "ByteVector",\ntempoMax: 900,\nopponentName: "Evosuite",\ndifficulty: "MEDIUM"}
+    deactivate T1DB
+    
+    T1 --> T1Service: Map<String, Object>\n(dati livello 2)
+    deactivate T1
+    
+    T1Service --> GameManager: Dati livello 2
+    deactivate T1Service
+    
+    GameManager -> GameManager: Aggiorna ScalataGame:\n- setClassUTName("ByteVector")\n- setRemainingTime(900)\n- Aggiorna avversario\n- Mantiene sessione attiva
+
+end
+
+GameManager --> GameController: EndScalataGameResponseDTO\n(currentLevel: 2,\ntotalLevels: 5,\nscalataCompleted: false,\nnextLevelData: {...})
+deactivate GameManager
+
+GameController --> UI: JSON Response
+deactivate GameController
+
+UI --> Player: Livello 1 completato! ✓\nPassaggio al livello 2/5\nNuova classe: ByteVector\nTempo: 15 minuti\nAvversario: Evosuite (Medio)
+deactivate UI
+
+@enduml

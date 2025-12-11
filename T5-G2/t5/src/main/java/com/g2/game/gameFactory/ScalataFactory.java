@@ -10,14 +10,28 @@ import org.springframework.stereotype.Component;
 @Component("Scalata")
 public class ScalataFactory implements GameFactoryFunction {
 
+// In ScalataFactory.java
+
     @Override
     public GameLogic create(ServiceManager serviceManager, GameParams params) {
         if (!(params instanceof ScalataParams))
             throw new IllegalArgumentException("Impossibile creare Scalata, params non è del tipo atteso");
-        return new ScalataGame( serviceManager, params.getPlayerId(),  params.getClassUTName(),  params.getOpponentType(),
-                params.getOpponentDifficulty(), params.getGameMode(), params.getTestClassCode(), ((ScalataParams) params).getRemainingTime(),
-                ((ScalataParams) params).getScalataName(), ((ScalataParams) params).getCurrentLevel(), ((ScalataParams) params).getTotalLevels(),
-                ((ScalataParams) params).getTimeMaxPerLevel()
+
+        ScalataParams scalataParams = (ScalataParams) params;
+
+        return new ScalataGame(
+                serviceManager,
+                params.getPlayerId(),
+                params.getClassUTName(),
+                params.getOpponentType(),
+                params.getOpponentDifficulty(),
+                params.getGameMode(),
+                params.getTestClassCode(),
+                scalataParams.getRemainingTime(),
+                scalataParams.getScalataName(),
+                scalataParams.getCurrentLevel(),
+                scalataParams.getTotalLevels(),
+                scalataParams.getTimeMaxPerLevel() // Assicurati che questo valore arrivi popolato dai params
         );
     }
 }

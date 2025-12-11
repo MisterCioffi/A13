@@ -1,0 +1,157 @@
+@startuml Progressione Livelli Scalata - Alto Livello
+!theme plain
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam backgroundColor White
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam maxMessageSize 200
+
+title Diagramma di Sequenza - Progressione Livelli Scalata (Alto Livello di Astrazione)
+
+actor "Giocatore" as Player
+participant "T5\n(Game Logic)" as T5
+participant "T4\n(Game Persistence)" as T4
+participant "T1\n(Configuration & Resources)" as T1
+participant "T23\n(Player Statistics)" as T23
+
+== Inizializzazione Scalata ==
+
+Player -> T5: Seleziona Scalata\n"Scalata_Nome"
+activate T5
+
+note over T5
+  T5 verifica se esiste
+  una partita in corso
+  per questa scalata
+end note
+
+T5 -> T4: Recupera livello corrente\nper (Player, Scalata)
+activate T4
+T4 --> T5: currentLevel\n(o 1 se nuova)
+deactivate T4
+
+note over T5
+  currentLevel = 1 (nuova scalata)
+  oppure
+  currentLevel = N (riprende)
+end note
+
+T5 -> T1: Recupera configurazione\nLivello {currentLevel}\ndi Scalata_Nome
+activate T1
+T1 --> T5: LevelData\n{className, tempo,\navversario, difficoltà}
+deactivate T1
+
+T5 -> T4: Crea/Aggiorna Game\n(scalataName, currentLevel,\ntotalLevels)
+activate T4
+T4 --> T5: gameId
+deactivate T4
+
+T5 --> Player: Scalata iniziata\nLivello {currentLevel}/{totalLevels}
+deactivate T5
+
+== Esecuzione Livello ==
+
+loop Giocatore effettua turni
+
+  Player -> T5: Esegue turno\n(submit test)
+  activate T5
+  
+  note over T5
+    Compila, valuta,
+    calcola punteggi
+  end note
+  
+  T5 --> Player: Risultato turno\n(score, coverage)
+  deactivate T5
+
+end
+
+== Fine Livello ==
+
+Player -> T5: Termina livello
+activate T5
+
+alt Giocatore HA VINTO il livello
+
+  note over T5
+    Aggiorna statistiche
+    del giocatore
+  end note
+  
+  T5 -> T23: Aggiorna progresso\nvittoria + achievements\nexp points
+  activate T23
+  T23 --> T5: OK
+  deactivate T23
+  
+  alt Scalata NON completata (currentLevel < totalLevels)
+  
+    note over T5
+      Incrementa livello
+      e carica dati prossimo livello
+    end note
+    
+    T5 -> T4: Incrementa currentLevel\n(da N a N+1)
+    activate T4
+    T4 --> T5: OK
+    deactivate T4
+    
+    T5 -> T1: Recupera configurazione\nLivello {N+1}\ndi Scalata_Nome
+    activate T1
+    T1 --> T5: LevelData\n{nuovaClasse, nuovoTempo,\nnuovoAvversario}
+    deactivate T1
+    
+    T5 -> T4: Aggiorna sessione\ncon dati livello {N+1}\n(mantieni game aperto)
+    activate T4
+    T4 --> T5: OK
+    deactivate T4
+    
+    T5 --> Player: Livello {N} completato! ✓\nPassa a Livello {N+1}/{totalLevels}\nNuova classe: {nuovaClasse}
+    deactivate T5
+    
+    note over Player
+      Ritorna al loop
+      "Esecuzione Livello"
+      con nuovi dati
+    end note
+  
+  else Scalata COMPLETATA (currentLevel >= totalLevels)
+  
+    note over T5
+      Tutti i livelli superati!
+      Chiudi la partita
+    end note
+    
+    T5 -> T4: Termina partita Scalata\n(status = FINISHED)
+    activate T4
+    T4 --> T5: OK
+    deactivate T4
+    
+    T5 -> T23: Registra completamento\nScalata intera
+    activate T23
+    T23 --> T5: OK
+    deactivate T23
+    
+    T5 --> Player: 🎉 SCALATA COMPLETATA! 🎉\nTutti {totalLevels} livelli superati\nExp totale: {totalExp}\nAchievement: [...]
+    deactivate T5
+  
+  end
+
+else Giocatore HA PERSO il livello
+
+  note over T5
+    Livello fallito
+    Scalata terminata
+  end note
+  
+  T5 -> T4: Termina partita Scalata\n(status = FINISHED)
+  activate T4
+  T4 --> T5: OK
+  deactivate T4
+  
+  T5 --> Player: Livello {currentLevel} fallito ✗\nScalata terminata\nRaggiunto livello {currentLevel}/{totalLevels}
+  deactivate T5
+
+end
+
+@enduml

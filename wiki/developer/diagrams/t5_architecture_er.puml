@@ -1,0 +1,663 @@
+@startuml T5 Architecture ER Diagram
+!theme plain
+skinparam backgroundColor White
+skinparam classBackgroundColor #E8F4F8
+skinparam classBorderColor #2E5090
+skinparam classArrowColor #2E5090
+skinparam fontSize 10
+skinparam arrowThickness 1.5
+
+title T5 - Enterprise Resource Architecture Diagram
+
+package "Controllers" {
+    class GameController {
+        +POST /StartGame(StartGameRequestDTO)
+        +POST /run(RunGameRequestDTO)
+        +POST /EndGame(RunGameRequestDTO)
+        +GET /GetCurrentGame()
+    }
+    
+    class GuiController {
+        +GET /ListaScalate
+        +GET /gameMode
+        +GET /userProfile
+        +GET /leaderboard
+    }
+    
+    class UserProfileController {
+        +GET /profile/{userId}
+        +PUT /profile
+        +GET /achievements
+    }
+    
+    class SessionController {
+        +GET /session/{sessionId}
+        +DELETE /session/{sessionId}
+    }
+    
+    class LocaleController {
+        +GET /language
+        +POST /language
+    }
+}
+
+package "Game Logic" {
+    class GameManager {
+        +handleStartNewGame(StartGameRequestDTO)
+        +handlePlayTurn(RunGameRequestDTO, boolean)
+        +handleEndGame(RunGameRequestDTO)
+        +handleGetCurrentGame(playerId, gameMode)
+        -handleCompileAndCoverage()
+        -handleCloseGame()
+    }
+    
+    class GameService {
+        +createNewGame(GameParams)
+        +compilePlayerTest()
+        +getOpponentCoverage()
+        +closeTurn()
+        +createNewGameProgress()
+    }
+    
+    class PlayerStatService {
+        +assignExperiencePoints()
+        +unlockGameModeAchievements()
+        +unlockGlobalAchievements()
+    }
+    
+    class LogWriterService {
+        +createDirectory()
+        +writeTurn()
+    }
+    
+    class AchievementService {
+        +checkAchievements()
+        +unlockAchievements()
+    }
+}
+
+package "Game Modes" {
+    abstract class GameLogic {
+        #playerId: Long
+        #gameID: Long
+        #gameMode: GameMode
+        #classUTName: String
+        #classUTCode: String
+        #testingClassCode: String
+        #currentRound: Integer
+        #currentTurn: Integer
+        #remainingTime: Integer
+        #serviceManager: ServiceManager
+        +startGame()
+        +startRound()
+        +updateState()
+        +isGameEnd()
+        +getScore()
+        +gameModeAchievements()
+    }
+    
+    class PartitaSingola {
+        +isGameEnd(): Boolean
+        +getScore(): Integer
+    }
+    
+    class Sfida {
+        +isGameEnd(): Boolean
+        +getScore(): Integer
+    }
+    
+    class Allenamento {
+        +isGameEnd(): Boolean
+        +getScore(): Integer
+    }
+    
+    class ScalataGame {
+        -currentLevel: Integer
+        -scalataName: String
+        -totalLevels: Integer
+        +isScalataWon(): Boolean
+        +updateState()
+        +gameModeAchievements()
+    }
+    
+    class TurnBasedGame {
+        #userCompileResult: CompileResult
+        #robotCompileResult: CompileResult
+        #isWinner: Boolean
+        +calculateCoverage()
+        +calculateScore()
+    }
+}
+
+package "Game Factory" {
+    class GameParamsFactory {
+        +{static}generateCreateParams(StartGameRequestDTO)
+        +{static}generateUpdateParams(RunGameRequestDTO)
+    }
+    
+    class GameRegistry {
+        +registerFactory(GameMode, GameFactoryFunction)
+        +getFactory(GameMode)
+    }
+    
+    class PartitaSingolaFactory {
+        +create(GameParams)
+    }
+    
+    class SfidaFactory {
+        +create(GameParams)
+    }
+    
+    class AllenamentoFactory {
+        +create(GameParams)
+    }
+    
+    class ScalataFactory {
+        +create(GameParams)
+    }
+    
+    interface GameFactoryFunction {
+        +create(GameParams): GameLogic
+    }
+}
+
+package "Game Factory Params" {
+    abstract class GameParams {
+        #playerId: Long
+        #classUTName: String
+        #gameMode: GameMode
+        #classUTCode: String
+        #testClassCode: String
+    }
+    
+    class PartitaSingolaParams {
+        #opponentType: String
+        #difficulty: OpponentDifficulty
+        #remainingTime: Integer
+    }
+    
+    class ScalataParams {
+        #scalataName: String
+        #currentLevel: Integer
+        #totalLevels: Integer
+        #remainingTime: Integer
+    }
+}
+
+package "Compilation & Coverage" {
+    class CoverageService {
+        +calculateCoverage()
+        +parseJacoco()
+        +parseEvosuite()
+    }
+    
+    class CompileResult {
+        -hasSuccess: Boolean
+        -lineCoverage: CoverageResult
+        -branchCoverage: CoverageResult
+        -evosuiteLine: CoverageResult
+        -evosuiteBranch: CoverageResult
+        +hasSuccess()
+        +getCoverage()
+    }
+    
+    class CoverageResult {
+        -covered: Integer
+        -missed: Integer
+        +getPercentage()
+    }
+}
+
+package "Models" {
+    class Game {
+        -id: Long
+        -playerId: Long
+        -gameMode: GameMode
+        -currentLevel: Integer
+        -scalataName: String
+        -status: GameStatus
+    }
+    
+    class User {
+        -id: Long
+        -email: String
+        -username: String
+        -role: String
+    }
+    
+    class UserProfile {
+        -userId: Long
+        -displayName: String
+        -bio: String
+        -joinDate: Date
+    }
+    
+    class UserGameProgress {
+        -userId: Long
+        -experiencePoints: Integer
+        -globalAchievements: Set<String>
+    }
+    
+    class Experience {
+        -userId: Long
+        -totalExp: Integer
+        -level: Integer
+    }
+    
+    class GeneralAchievement {
+        -id: String
+        -name: String
+        -description: String
+        -icon: String
+    }
+    
+    class Team {
+        -id: String
+        -name: String
+        -members: List<User>
+    }
+    
+    class ClassUT {
+        -name: String
+        -code: String
+        -description: String
+    }
+    
+    class OpponentSummary {
+        -gameMode: GameMode
+        -opponentType: String
+        -difficulty: OpponentDifficulty
+    }
+    
+    class LeaderboardRecord {
+        -rank: Integer
+        -userId: Long
+        -username: String
+        -score: Integer
+    }
+    
+    class Notification {
+        -id: Long
+        -userId: Long
+        -message: String
+        -type: String
+        -timestamp: Date
+    }
+    
+    class ScalataGiocata {
+        -playerID: Long
+        -scalataName: String
+        -creationTime: String
+        -creationDate: String
+    }
+    
+    class PlayerResult {
+        -playerId: Long
+        -score: Integer
+        -isWinner: Boolean
+    }
+}
+
+package "DTOs" {
+    class ScalataDTO {
+        -name: String
+        -totalLevels: Integer
+        -description: String
+        -username: String
+    }
+    
+    class ScalataProgressDTO {
+        -currentLevel: Integer
+        -nextLevel: Integer
+        -totalLevels: Integer
+        -isWinner: Boolean
+    }
+    
+    class PlayerProgressDTO {
+        -experiencePoints: Integer
+        -globalAchievements: Set<String>
+        -gameProgressesDTO: List<GameProgressDTO>
+    }
+    
+    class GameProgressDTO {
+        -isWinner: Boolean
+        -achievements: Set<String>
+    }
+    
+    class UpdateGameProgressDTO {
+        -won: Boolean
+        -achievements: Set<String>
+    }
+    
+    class ScalataLevelConfigDTO {
+        -className: String
+        -tempoMax: Integer
+        -opponentName: String
+        -difficulty: String
+    }
+    
+    class ResponseTeamComplete {
+        -teamId: String
+        -teamName: String
+        -members: List<User>
+    }
+    
+    class LeaderboardRecordDTO {
+        -rank: Integer
+        -username: String
+        -score: Integer
+    }
+    
+    class PlayerDTO {
+        -id: Long
+        -username: String
+        -email: String
+    }
+}
+
+package "Game DTOs" {
+    abstract class StartGameRequestDTO {
+        #playerId: Long
+        #classUTName: String
+        #typeRobot: String
+        #difficulty: OpponentDifficulty
+    }
+    
+    class StartScalataRequestDTO {
+        -scalataName: String
+        -currentLevel: Integer
+        -totalLevels: Integer
+        -remainingTime: Integer
+    }
+    
+    class StartPartitaSingolaRequestDTO {
+        -difficulty: OpponentDifficulty
+        -remainingTime: Integer
+    }
+    
+    abstract class RunGameRequestDTO {
+        #playerId: Long
+        #gameId: Long
+        #classUTCode: String
+        #testClassCode: String
+    }
+    
+    class RunScalataDTO {
+        -scalataName: String
+    }
+    
+    class RunPartitaSingolaRequestDTO {
+    }
+    
+    class RunGameResponseDTO {
+        -userScore: Integer
+        -robotScore: Integer
+        -isWinner: Boolean
+        -unlockedAchievements: Set<String>
+    }
+    
+    class EndGameResponseDTO {
+        -userScore: Integer
+        -robotScore: Integer
+        -isWinner: Boolean
+        -experienceGained: Integer
+        -unlockedAchievements: Set<String>
+    }
+    
+    class EndScalataGameResponseDTO {
+        -currentLevel: Integer
+        -totalLevels: Integer
+        -scalataCompleted: Boolean
+        -nextLevelData: Map<String, Object>
+    }
+}
+
+package "Session Management" {
+    class SessionService {
+        +setGameMode(playerId, gameLogic)
+        +getGameMode(playerId, gameMode)
+        +updateGameMode(playerId, gameLogic)
+        +removeGameMode(playerId, gameMode)
+    }
+    
+    class Sessione {
+        -playerId: Long
+        -gameMode: GameMode
+        -gameLogic: GameLogic
+        -timestamp: Long
+    }
+    
+    class RedisConfig {
+        +redisTemplate()
+        +cacheManager()
+    }
+    
+    class RedisCleanupService {
+        +cleanupExpiredSessions()
+    }
+    
+    class JacksonConfig {
+        +objectMapper()
+    }
+}
+
+package "Interfaces / External Services" {
+    interface ServiceInterface {
+        +handleRequest(serviceName, action, params)
+    }
+    
+    class ServiceManager {
+        -services: Map<String, ServiceInterface>
+        +registerService(name, service)
+        +handleRequest(serviceName, action, params)
+    }
+    
+    class T1Service {
+        +getScalateList()
+        +getLevelByScalataAndPosition()
+        +getOpponentCoverage()
+        +getClassUnderTest()
+    }
+    
+    class T4Service {
+        +CreateGame()
+        +EndGame()
+        +EndTurn()
+        +IncrementCurrentLevel()
+        +GetCurrentLevelForScalata()
+    }
+    
+    class T7Service {
+        +compileAndEvaluate()
+        +getCoverage()
+    }
+    
+    class T8Service {
+        +getEvoSuiteCoverage()
+    }
+    
+    class T23Service {
+        +getPlayerProgress()
+        +updateGameProgress()
+        +updateExperience()
+        +updateAchievements()
+    }
+    
+    class BaseService {
+        #baseURL: String
+        #restTemplate: RestTemplate
+        +callRestGET()
+        +callRestPUT()
+        +callRestPOST()
+    }
+}
+
+package "Components" {
+    class ServiceObjectComponent {
+        -serviceManager: ServiceManager
+        -serviceKey: String
+        -serviceName: String
+        -actionName: String
+    }
+    
+    class ServiceLogicComponent {
+        -serviceManager: ServiceManager
+    }
+    
+    class UserProfileComponent {
+        -userProfileService: UserProfileService
+    }
+    
+    class LeaderboardComponent {
+        -leaderboardService: LeaderboardService
+    }
+    
+    class AuthComponent {
+        -authService: AuthService
+    }
+    
+    class PageBuilder {
+        +buildPage()
+        +addComponent()
+    }
+    
+    class VariableValidationLogicComponent {
+        +validateInput()
+    }
+}
+
+package "Security & Auth" {
+    class AuthTokenFilter {
+        +doFilterInternal()
+    }
+    
+    class FilterConfig {
+        +securityFilterChain()
+    }
+    
+    class JwtRequestContext {
+        -userId: Long
+        -email: String
+        -roles: Set<String>
+    }
+}
+
+package "Configuration" {
+    class GameExecutionConfig {
+        -executeEvosuiteOnlyAtEndGame: Boolean
+    }
+    
+    class ServiceConfig {
+        +serviceManager()
+        +t1Service()
+        +t4Service()
+        +t7Service()
+        +t8Service()
+        +t23Service()
+    }
+}
+
+package "Utilities" {
+    class MessageResolver {
+        +getMessage(key)
+    }
+    
+    class MessageKey {
+        +{static}GAME_STARTED
+        +{static}LEVEL_COMPLETED
+    }
+    
+    class GameExceptionHelper {
+        +handleException()
+    }
+}
+
+package "Data Writers" {
+    class GameDataWriter {
+        +saveGame()
+    }
+    
+    class ScalataDataWriter {
+        +saveScalata()
+    }
+}
+
+'--- Relationships ---
+
+'Controllers to Services
+GameController --> GameManager: uses
+GameController --> SessionService: uses
+GuiController --> T1Service: uses
+UserProfileController --> User: manages
+
+'GameManager to Game Logic
+GameManager --> GameLogic: creates/manages
+GameManager --> GameService: uses
+GameManager --> PlayerStatService: uses
+GameManager --> LogWriterService: uses
+
+'Game Modes Hierarchy
+GameLogic <|-- PartitaSingola
+GameLogic <|-- Sfida
+GameLogic <|-- Allenamento
+GameLogic <|-- TurnBasedGame
+TurnBasedGame <|-- ScalataGame
+
+'Game Factory
+GameRegistry --> GameFactoryFunction: registers
+GameFactoryFunction <|.. PartitaSingolaFactory
+GameFactoryFunction <|.. SfidaFactory
+GameFactoryFunction <|.. AllenamentoFactory
+GameFactoryFunction <|.. ScalataFactory
+GameParamsFactory --> GameParams: creates
+PartitaSingolaFactory --> PartitaSingola: creates
+ScalataFactory --> ScalataGame: creates
+
+'Game Params
+GameParams <|-- PartitaSingolaParams
+GameParams <|-- ScalataParams
+
+'Compilation
+CompileResult --> CoverageResult: contains
+CoverageService --> CoverageResult: creates
+
+'Models
+Game *-- User: belongs_to
+UserGameProgress *-- User: belongs_to
+Experience *-- User: belongs_to
+Team *-- User: contains
+GeneralAchievement *-- User: has
+UserProfile *-- User: describes
+
+'DTOs
+ScalataDTO --> ScalataProgressDTO: maps_to
+PlayerProgressDTO --> GameProgressDTO: contains
+StartGameRequestDTO <|-- StartScalataRequestDTO
+StartGameRequestDTO <|-- StartPartitaSingolaRequestDTO
+RunGameRequestDTO <|-- RunScalataDTO
+RunGameRequestDTO <|-- RunPartitaSingolaRequestDTO
+
+'Session
+SessionService --> Sessione: manages
+SessionService --> GameLogic: stores
+Sessione --> GameLogic: contains
+
+'Interfaces
+ServiceManager --> ServiceInterface: manages
+T1Service --|> BaseService
+T4Service --|> BaseService
+T7Service --|> BaseService
+T8Service --|> BaseService
+T23Service --|> BaseService
+
+'Components
+ServiceObjectComponent --> ServiceManager: uses
+ServiceLogicComponent --> ServiceManager: uses
+PageBuilder --> ServiceObjectComponent: uses
+PageBuilder --> LeaderboardComponent: uses
+
+'Security
+AuthTokenFilter --> JwtRequestContext: creates
+FilterConfig --> AuthTokenFilter: configures
+
+@enduml
